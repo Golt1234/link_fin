@@ -1,0 +1,84 @@
+# -----------------------------
+#  Python bytecode / cache
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# -----------------------------
+#  Virtual environments
+# -----------------------------
+venv/
+.env/
+.venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# -----------------------------
+#  Build / packaging
+# -----------------------------
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+*.whl
+
+# -----------------------------
+#  Installer logs
+# -----------------------------
+pip-log.txt
+pip-delete-this-directory.txt
+
+# -----------------------------
+#  Unit tests / coverage
+# -----------------------------
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+pytest_cache/
+.tox/
+.nox/
+hypothesis/
+
+# -----------------------------
+#  Type checkers
+# -----------------------------
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+
+# -----------------------------
+#  Jupyter
+# -----------------------------
+.ipynb_checkpoints/
+
+# -----------------------------
+#  Editors / IDEs
+# -----------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -----------------------------
+#  OS junk
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+#  Project-specific
+# -----------------------------
+# Add your own logs/configs here
+*.log
+
+*.csv
+.vs/
+.env
