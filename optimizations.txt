@@ -1,0 +1,102 @@
+Before first query run, we have several optimizations performed at Polars level as follows:
+
+Accounts data:
+
+A name validation schema is applied which makes sure the names adhere to a specific pattern (Western names, given the population included in the tables) and that names including forbidden words (test, trap, etc) are not included.
+
+An address validation schema which matches the address to a specific pattern and drops incorrect addresses.
+
+Daily status:
+
+Invalid changed_datetime values are removed via a filter.
+
+The "account" column originally stored as text in the CSV files is converted to integer to match the type used by account_id in the Accounts table.
+
+Monthly status:
+
+The "account" column originally stored as text in the CSV files is converted to integer to match the type used by account_id in the Accounts table.
+
+The data is then placed in 3 tables in the database, as required: Accounts, Daily_Status, Monthly_Status.
+Then the Recent_Accounts table is added to the Postgres DB, as required at Step 3.
+
+
+
+Requirements Step 5 optimizations
+
+Baseline (no optimizations)
+
+"Unique  (cost=112.50..114.15 rows=250 width=70) (actual time=0.682..0.758 rows=429 loops=1)"
+"  ->  Sort  (cost=112.50..113.33 rows=330 width=70) (actual time=0.680..0.701 rows=990 loops=1)"
+"        Sort Key: account_id, latest_update_datetime DESC"
+"        Sort Method: quicksort  Memory: 118kB"
+"        ->  Seq Scan on \"Recent_Accounts\"  (cost=0.00..98.70 rows=330 width=70) (actual time=0.021..0.467 rows=990 loops=1)"
+"              Filter: ((queue = ANY ('{COLLECTIONS,LEGAL}'::text[])) AND ((latest_update_datetime)::date <= '2025-11-27'::date))"
+"              Rows Removed by Filter: 2250"
+"Planning Time: 0.103 ms"
+"Execution Time: 0.784 ms"
+
+First optimization step: create an index on queue because the query filters on queue first so we need to speed things up here:
+
+CREATE INDEX idx_recent_accounts_queue_date
+ON "Recent_Accounts" (queue, latest_update_datetime);
+
+Result:
+
+"Unique  (cost=105.20..106.85 rows=250 width=70) (actual time=0.479..0.550 rows=429 loops=1)"
+"  ->  Sort  (cost=105.20..106.02 rows=330 width=70) (actual time=0.478..0.500 rows=990 loops=1)"
+"        Sort Key: account_id, latest_update_datetime DESC"
+"        Sort Method: quicksort  Memory: 118kB"
+"        ->  Bitmap Heap Scan on \"Recent_Accounts\"  (cost=32.07..91.39 rows=330 width=70) (actual time=0.132..0.297 rows=990 loops=1)"
+"              Recheck Cond: (queue = ANY ('{COLLECTIONS,LEGAL}'::text[]))"
+"              Filter: ((latest_update_datetime)::date <= '2025-11-27'::date)"
+"              Heap Blocks: exact=42"
+"              ->  Bitmap Index Scan on idx_recent_accounts_queue_date  (cost=0.00..31.98 rows=990 width=0) (actual time=0.113..0.113 rows=990 loops=1)"
+"                    Index Cond: (queue = ANY ('{COLLECTIONS,LEGAL}'::text[]))"
+"Planning Time: 1.318 ms"
+"Execution Time: 0.586 ms"
+
+
+
+Second optimization step: create an index on account_id for distinct_on ordering
+
+CREATE INDEX idx_recent_accounts_latest_per_account
+ON "Recent_Accounts" (account_id, latest_update_datetime DESC);
+
+Result:
+
+"Unique  (cost=105.20..106.85 rows=250 width=70) (actual time=0.395..0.504 rows=429 loops=1)"
+"  ->  Sort  (cost=105.20..106.02 rows=330 width=70) (actual time=0.394..0.434 rows=990 loops=1)"
+"        Sort Key: account_id, latest_update_datetime DESC"
+"        Sort Method: quicksort  Memory: 118kB"
+"        ->  Bitmap Heap Scan on \"Recent_Accounts\"  (cost=32.07..91.39 rows=330 width=70) (actual time=0.072..0.223 rows=990 loops=1)"
+"              Recheck Cond: (queue = ANY ('{COLLECTIONS,LEGAL}'::text[]))"
+"              Filter: ((latest_update_datetime)::date <= '2025-11-27'::date)"
+"              Heap Blocks: exact=42"
+"              ->  Bitmap Index Scan on idx_recent_accounts_queue_date  (cost=0.00..31.98 rows=990 width=0) (actual time=0.058..0.058 rows=990 loops=1)"
+"                    Index Cond: (queue = ANY ('{COLLECTIONS,LEGAL}'::text[]))"
+"Planning Time: 1.651 ms"
+"Execution Time: 0.533 ms"
+
+Third optimization step: we change the datetime cast to a boundary comparison so that PostgreSQL does not have to cast each timestamp to date
+
+Changed:
+latest_update_datetime::date <= DATE '2025-11-27'
+
+To:
+latest_update_datetime < '2025-11-28'
+
+Result:
+
+"Unique  (cost=140.82..145.77 rows=452 width=70) (actual time=0.318..0.393 rows=429 loops=1)"
+"  ->  Sort  (cost=140.82..143.29 rows=990 width=70) (actual time=0.318..0.337 rows=990 loops=1)"
+"        Sort Key: account_id, latest_update_datetime DESC"
+"        Sort Method: quicksort  Memory: 118kB"
+"        ->  Bitmap Heap Scan on \"Recent_Accounts\"  (cost=34.71..91.56 rows=990 width=70) (actual time=0.079..0.160 rows=990 loops=1)"
+"              Recheck Cond: ((queue = ANY ('{COLLECTIONS,LEGAL}'::text[])) AND (latest_update_datetime < '2025-11-28 00:00:00'::timestamp without time zone))"
+"              Heap Blocks: exact=42"
+"              ->  Bitmap Index Scan on idx_recent_accounts_queue_date  (cost=0.00..34.46 rows=990 width=0) (actual time=0.067..0.067 rows=990 loops=1)"
+"                    Index Cond: ((queue = ANY ('{COLLECTIONS,LEGAL}'::text[])) AND (latest_update_datetime < '2025-11-28 00:00:00'))"
+"Planning Time: 0.097 ms"
+"Execution Time: 0.429 ms"
+
+Lastly, we run a vacuum optimize on "Recent_Accounts" to clean up garbage

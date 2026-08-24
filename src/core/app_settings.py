@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     )
 
     debug: bool = False
-    app_name: str = "Agents_At_War"
+    app_name: str = "link_fin"
     log_level: str = "INFO"
     data_dir: Path = Path("./data")
 

@@ -80,5 +80,6 @@ Thumbs.db
 *.log
 
 *.csv
+!output/*.csv
 .vs/
 .env
